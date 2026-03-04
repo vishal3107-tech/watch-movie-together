@@ -30,18 +30,24 @@ export default function Home() {
     const code = joinCode.trim().toUpperCase();
     
     if (code.length > 0) {
-      // Ask the server if the room is real
+      // 1. Check if we are actually connected to the backend
+      if (!socket.connected) {
+        setErrorMsg('Waiting for server to wake up... try again in 10 seconds! ⏳');
+        setTimeout(() => setErrorMsg(''), 4000);
+        return;
+      }
+
+      // 2. Ask the server if the room is real
       socket.emit('check-room', code, (response) => {
-        if (response.exists) {
+        if (response && response.exists) {
           navigate(`/room/${code}`);
         } else {
           setErrorMsg('No room exists with this code! ❌');
-          setTimeout(() => setErrorMsg(''), 3000); // Hide error after 3 seconds
+          setTimeout(() => setErrorMsg(''), 3000); 
         }
       });
     }
   };
-
   return (
     <div className="flex h-screen items-center justify-center bg-gray-900 text-white font-sans">
       <div className="bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700 w-96 flex flex-col gap-6 text-center">
