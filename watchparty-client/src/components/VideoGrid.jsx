@@ -65,7 +65,7 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
       localStreamRef.current = stream;
       if (userVideo.current) userVideo.current.srcObject = stream;
       
-      socket.emit("join-room", roomId);
+      socket.emit("join-room", { roomID: roomId, userName: userName });
 
       socket.on("all-users", users => {
         const newPeers = users.map(userID => {

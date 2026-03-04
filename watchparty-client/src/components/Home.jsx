@@ -1,11 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
+
+// Make sure to use your LIVE Render URL here!
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'https://YOUR-RENDER-URL.onrender.com';
+const socket = io(SERVER_URL);
 
 export default function Home() {
   const navigate = useNavigate();
   const [joinCode, setJoinCode] = useState('');
+  const [errorMsg, setErrorMsg] = useState(''); // New Error State
 
-  // Generates a random 6-character string of numbers and uppercase letters
   const generateRoomId = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let result = '';
@@ -16,15 +21,24 @@ export default function Home() {
   };
 
   const handleCreateRoom = () => {
-    const newRoomId = generateRoomId();
-    navigate(`/room/${newRoomId}`);
+    // Creators bypass validation because they are making the room!
+    navigate(`/room/${generateRoomId()}`);
   };
 
   const handleJoinRoom = (e) => {
-    e.preventDefault(); // Prevents the page from refreshing when you submit the form
-    if (joinCode.trim().length > 0) {
-      // Force uppercase so it matches perfectly
-      navigate(`/room/${joinCode.toUpperCase()}`);
+    e.preventDefault();
+    const code = joinCode.trim().toUpperCase();
+    
+    if (code.length > 0) {
+      // Ask the server if the room is real
+      socket.emit('check-room', code, (response) => {
+        if (response.exists) {
+          navigate(`/room/${code}`);
+        } else {
+          setErrorMsg('No room exists with this code! ❌');
+          setTimeout(() => setErrorMsg(''), 3000); // Hide error after 3 seconds
+        }
+      });
     }
   };
 
@@ -34,22 +48,16 @@ export default function Home() {
         <h1 className="text-3xl font-bold tracking-tight text-blue-400">Watch Party</h1>
         <p className="text-gray-400 text-sm mb-2">Watch videos in sync with friends.</p>
 
-        {/* Create Room Button */}
-        <button
-          onClick={handleCreateRoom}
-          className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg active:scale-95"
-        >
+        <button onClick={handleCreateRoom} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg">
           Create New Room
         </button>
 
-        {/* Divider */}
         <div className="flex items-center gap-3">
           <hr className="flex-1 border-gray-600" />
           <span className="text-gray-500 text-xs font-bold uppercase tracking-wider">OR</span>
           <hr className="flex-1 border-gray-600" />
         </div>
 
-        {/* Join Room Form */}
         <form onSubmit={handleJoinRoom} className="flex flex-col gap-3">
           <input
             type="text"
@@ -57,13 +65,12 @@ export default function Home() {
             value={joinCode}
             onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
             maxLength={6}
-            className="w-full bg-black/50 border border-gray-600 rounded-lg px-4 py-3 text-center text-lg font-mono tracking-widest focus:outline-none focus:border-blue-500 placeholder-gray-600 transition-colors uppercase"
+            className="w-full bg-black/50 border border-gray-600 rounded-lg px-4 py-3 text-center text-lg font-mono tracking-widest focus:outline-none focus:border-blue-500"
           />
-          <button
-            type="submit"
-            disabled={joinCode.length === 0}
-            className="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-bold py-3 px-4 rounded-lg transition-all shadow-lg active:scale-95"
-          >
+          {/* Error Message Display */}
+          {errorMsg && <p className="text-red-500 text-sm font-bold animate-pulse">{errorMsg}</p>}
+          
+          <button type="submit" disabled={joinCode.length === 0} className="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg">
             Join Room
           </button>
         </form>
