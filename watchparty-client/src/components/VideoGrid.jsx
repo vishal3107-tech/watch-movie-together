@@ -9,9 +9,7 @@ const PeerVideo = ({ peer }) => {
   return (
     <div className="h-full min-w-[200px] relative rounded-lg overflow-hidden border border-gray-700 bg-black">
       <video playsInline autoPlay ref={ref} className="h-full w-full object-cover" />
-      <span className="absolute bottom-2 left-2 bg-black/70 text-xs px-2 py-1 rounded text-white shadow-lg">
-        Friend
-      </span>
+      <span className="absolute bottom-2 left-2 bg-black/70 text-xs px-2 py-1 rounded text-white shadow-lg">Friend</span>
     </div>
   );
 };
@@ -27,34 +25,42 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
 
   useEffect(() => {
     const peerConfig = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478' }
-      ]
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    };
+
+    // 1. THE REASSEMBLER: Handles incoming binary chunks
+    const handleData = (data, peer) => {
+      // If the first byte is 123 ('{'), it might be our JSON metadata
+      if (data[0] === 123) {
+        try {
+          const parsed = JSON.parse(new TextDecoder().decode(data));
+          if (parsed.type === 'FILE_START') {
+            peer.fileBuffer = [];
+            peer.fileMeta = parsed;
+            return;
+          }
+          if (parsed.type === 'FILE_END') {
+            const blob = new Blob(peer.fileBuffer, { type: peer.fileMeta.fileType });
+            setExternalVideoUrl(URL.createObjectURL(blob));
+            peer.fileBuffer = []; // Clear memory after assembly
+            return;
+          }
+        } catch (e) { /* Not JSON, it's just video data. Fall through. */ }
+      }
+      // 2. Push raw binary chunks directly into memory
+      if (peer.fileBuffer) peer.fileBuffer.push(data);
     };
 
     const createPeer = (userToSignal, callerID, stream) => {
       const peer = new Peer({ initiator: true, trickle: false, stream, config: peerConfig });
-      peer.on("data", data => {
-        const decoded = JSON.parse(new TextDecoder().decode(data));
-        if (decoded.type === 'FILE_TRANSFER') {
-          const blob = new Blob([new Uint8Array(decoded.fileData)], { type: decoded.fileType });
-          setExternalVideoUrl(URL.createObjectURL(blob));
-        }
-      });
+      peer.on("data", data => handleData(data, peer));
       peer.on("signal", signal => socket.emit("sending-signal", { userToSignal, callerID, signal }));
       return peer;
     };
 
     const addPeer = (incomingSignal, callerID, stream) => {
       const peer = new Peer({ initiator: false, trickle: false, stream, config: peerConfig });
-      peer.on("data", data => {
-        const decoded = JSON.parse(new TextDecoder().decode(data));
-        if (decoded.type === 'FILE_TRANSFER') {
-          const blob = new Blob([new Uint8Array(decoded.fileData)], { type: decoded.fileType });
-          setExternalVideoUrl(URL.createObjectURL(blob));
-        }
-      });
+      peer.on("data", data => handleData(data, peer));
       peer.on("signal", signal => socket.emit("returning-signal", { signal, callerID }));
       peer.signal(incomingSignal);
       return peer;
@@ -94,14 +100,33 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
       });
     });
 
+    // 3. THE CHUNKER: Slices the file and streams it over the bus
     window.sendVideoToPeers = (file) => {
-      file.arrayBuffer().then(buffer => {
-        const data = JSON.stringify({ type: 'FILE_TRANSFER', fileType: file.type, fileData: Array.from(new Uint8Array(buffer)) });
-        peersRef.current.forEach(({ peer }) => peer.send(data));
-      });
+      // Trigger the loading UI via Socket
+      socket.emit('start-file-share', { fileName: file.name });
+
+      const CHUNK_SIZE = 16 * 1024; // 16KB packets
+      let offset = 0;
+
+      const meta = JSON.stringify({ type: 'FILE_START', fileType: file.type });
+      peersRef.current.forEach(({ peer }) => peer.send(meta));
+
+      const readNextChunk = () => {
+        const slice = file.slice(offset, offset + CHUNK_SIZE);
+        slice.arrayBuffer().then(buffer => {
+          peersRef.current.forEach(({ peer }) => peer.send(buffer));
+          offset += buffer.byteLength;
+          if (offset < file.size) {
+            readNextChunk(); // Loop until finished
+          } else {
+            const endMeta = JSON.stringify({ type: 'FILE_END' });
+            peersRef.current.forEach(({ peer }) => peer.send(endMeta));
+          }
+        });
+      };
+      readNextChunk();
     };
 
-    // THE FIX: Surgical cleanup of ONLY the VideoGrid listeners!
     return () => { 
       socket.off("all-users");
       socket.off("user-joined");
@@ -113,20 +138,14 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
   const toggleVideo = () => {
     if (localStreamRef.current) {
       const track = localStreamRef.current.getVideoTracks()[0];
-      if (track) {
-        track.enabled = !track.enabled;
-        setIsVideoEnabled(track.enabled);
-      }
+      if (track) { track.enabled = !track.enabled; setIsVideoEnabled(track.enabled); }
     }
   };
 
   const toggleAudio = () => {
     if (localStreamRef.current) {
       const track = localStreamRef.current.getAudioTracks()[0];
-      if (track) {
-        track.enabled = !track.enabled;
-        setIsAudioEnabled(track.enabled);
-      }
+      if (track) { track.enabled = !track.enabled; setIsAudioEnabled(track.enabled); }
     }
   };
 
@@ -136,27 +155,18 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
         <div className="relative flex-1 rounded-lg overflow-hidden border-2 border-blue-500 bg-gray-900">
           <video playsInline muted autoPlay ref={userVideo} className={`h-full w-full object-cover ${!isVideoEnabled && 'opacity-0'}`} />
           {!isVideoEnabled && <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">Camera Off</div>}
-          <span className="absolute bottom-2 left-2 bg-blue-600/80 text-xs px-2 py-1 rounded text-white shadow-lg">
-            {userName} (You)
-          </span>
+          <span className="absolute bottom-2 left-2 bg-blue-600/80 text-xs px-2 py-1 rounded text-white shadow-lg">{userName} (You)</span>
         </div>
         
         <div className="flex justify-center gap-2 mt-1">
-          <button 
-            onClick={toggleAudio} 
-            className={`flex-1 py-1.5 rounded text-sm font-bold shadow transition-colors ${isAudioEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-500'}`}
-          >
+          <button onClick={toggleAudio} className={`flex-1 py-1.5 rounded text-sm font-bold shadow transition-colors ${isAudioEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-500'}`}>
             {isAudioEnabled ? '🎤 Mic On' : '🔇 Mic Off'}
           </button>
-          <button 
-            onClick={toggleVideo} 
-            className={`flex-1 py-1.5 rounded text-sm font-bold shadow transition-colors ${isVideoEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-500'}`}
-          >
+          <button onClick={toggleVideo} className={`flex-1 py-1.5 rounded text-sm font-bold shadow transition-colors ${isVideoEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-500'}`}>
             {isVideoEnabled ? '🎥 Cam On' : '🚫 Cam Off'}
           </button>
         </div>
       </div>
-
       {peers.map((peer) => <PeerVideo key={peer.peerID} peer={peer.peer} />)}
     </div>
   );

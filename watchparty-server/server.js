@@ -16,7 +16,7 @@ const socketToRoom = {};
 
 io.on('connection', socket => {
 
-  // 1. NEW: Check if room exists before letting someone join
+  // 1. Check if room exists before letting someone join
   socket.on('check-room', (roomID, callback) => {
     if (users[roomID] && users[roomID].length > 0) {
       callback({ exists: true });
@@ -27,7 +27,7 @@ io.on('connection', socket => {
 
   // 2. User officially joins
   socket.on('join-room', ({ roomID, userName }) => {
-    socket.join(roomID); // <-- THIS WAS THE MISSING MAGIC KEY! 
+    socket.join(roomID); 
     
     if (users[roomID]) {
       users[roomID].push(socket.id);
@@ -39,13 +39,14 @@ io.on('connection', socket => {
     const usersInThisRoom = users[roomID].filter(id => id !== socket.id);
     socket.emit('all-users', usersInThisRoom);
 
-    // 3. NEW: Tell the chat tab that someone joined!
+    // Tell the chat tab that someone joined
     socket.to(roomID).emit('system-message', {
       text: `${userName} joined the room 👋`,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     });
   });
 
+  // 3. WebRTC Signaling for Video Webcams and Data Channels
   socket.on('sending-signal', payload => {
     io.to(payload.userToSignal).emit('user-joined', { signal: payload.signal, callerID: payload.callerID });
   });
@@ -54,16 +55,26 @@ io.on('connection', socket => {
     io.to(payload.callerID).emit('receiving-returned-signal', { signal: payload.signal, id: socket.id });
   });
 
+  // 4. Video Syncing (Play, Pause, Seek)
   socket.on('video-event', (data) => {
     const roomID = socketToRoom[socket.id];
     socket.to(roomID).emit('video-event', data);
   });
 
+  // 5. Chat Sync
   socket.on('chat-message', (data) => {
     const roomID = socketToRoom[socket.id];
-    socket.to(roomID).emit('chat-message', data); // This will now work properly!
+    socket.to(roomID).emit('chat-message', data);
   });
 
+  // 6. THE NEW FIX: Announce incoming file transfers to the room
+  // This triggers the "Receiving [filename] over P2P..." loading UI
+  socket.on('start-file-share', (data) => {
+    const roomID = socketToRoom[socket.id];
+    socket.to(roomID).emit('start-file-share', data);
+  });
+
+  // 7. Handle Disconnects and Cleanup
   socket.on('disconnect', () => {
     const roomID = socketToRoom[socket.id];
     if (roomID) {
