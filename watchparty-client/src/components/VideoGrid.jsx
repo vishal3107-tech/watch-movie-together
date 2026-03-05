@@ -26,7 +26,6 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
   const localStreamRef = useRef(null);
 
   useEffect(() => {
-    // Added Public STUN Servers to help devices connect across networks
     const peerConfig = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -102,8 +101,14 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
       });
     };
 
-    return () => { socket.off(); };
-  }, [roomId, socket, setExternalVideoUrl]);
+    // THE FIX: Surgical cleanup of ONLY the VideoGrid listeners!
+    return () => { 
+      socket.off("all-users");
+      socket.off("user-joined");
+      socket.off("receiving-returned-signal");
+      socket.off("user-disconnected");
+    };
+  }, [roomId, socket, setExternalVideoUrl, userName]);
 
   const toggleVideo = () => {
     if (localStreamRef.current) {
@@ -127,7 +132,6 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
 
   return (
     <div className="flex w-full h-full gap-3 p-2 overflow-x-auto items-center">
-      {/* LOCAL VIDEO WITH VISIBLE CONTROLS */}
       <div className="h-full min-w-[220px] relative flex flex-col gap-1">
         <div className="relative flex-1 rounded-lg overflow-hidden border-2 border-blue-500 bg-gray-900">
           <video playsInline muted autoPlay ref={userVideo} className={`h-full w-full object-cover ${!isVideoEnabled && 'opacity-0'}`} />
@@ -137,7 +141,6 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
           </span>
         </div>
         
-        {/* EXPLICIT MIC & CAMERA BUTTONS */}
         <div className="flex justify-center gap-2 mt-1">
           <button 
             onClick={toggleAudio} 
@@ -154,7 +157,6 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
         </div>
       </div>
 
-      {/* REMOTE PEERS */}
       {peers.map((peer) => <PeerVideo key={peer.peerID} peer={peer.peer} />)}
     </div>
   );
