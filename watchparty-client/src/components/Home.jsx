@@ -1,15 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { io } from 'socket.io-client';
-
-// Make sure to use your LIVE Render URL here!
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'https://YOUR-RENDER-URL.onrender.com';
-const socket = io(SERVER_URL);
+import { socket } from '../socket'; // <-- Importing the shared socket
 
 export default function Home() {
   const navigate = useNavigate();
   const [joinCode, setJoinCode] = useState('');
-  const [errorMsg, setErrorMsg] = useState(''); // New Error State
+  const [errorMsg, setErrorMsg] = useState('');
 
   const generateRoomId = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -21,7 +17,6 @@ export default function Home() {
   };
 
   const handleCreateRoom = () => {
-    // Creators bypass validation because they are making the room!
     navigate(`/room/${generateRoomId()}`);
   };
 
@@ -30,14 +25,14 @@ export default function Home() {
     const code = joinCode.trim().toUpperCase();
     
     if (code.length > 0) {
-      // 1. Check if we are actually connected to the backend
+      // 1. Check if the server is awake
       if (!socket.connected) {
-        setErrorMsg('Waiting for server to wake up... try again in 10 seconds! ⏳');
+        setErrorMsg('Waiting for server to wake up... try again in 5 seconds! ⏳');
         setTimeout(() => setErrorMsg(''), 4000);
         return;
       }
 
-      // 2. Ask the server if the room is real
+      // 2. Validate the room
       socket.emit('check-room', code, (response) => {
         if (response && response.exists) {
           navigate(`/room/${code}`);
@@ -48,13 +43,14 @@ export default function Home() {
       });
     }
   };
+
   return (
     <div className="flex h-screen items-center justify-center bg-gray-900 text-white font-sans">
       <div className="bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700 w-96 flex flex-col gap-6 text-center">
         <h1 className="text-3xl font-bold tracking-tight text-blue-400">Watch Party</h1>
         <p className="text-gray-400 text-sm mb-2">Watch videos in sync with friends.</p>
 
-        <button onClick={handleCreateRoom} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg">
+        <button onClick={handleCreateRoom} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition-transform active:scale-95">
           Create New Room
         </button>
 
@@ -71,12 +67,11 @@ export default function Home() {
             value={joinCode}
             onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
             maxLength={6}
-            className="w-full bg-black/50 border border-gray-600 rounded-lg px-4 py-3 text-center text-lg font-mono tracking-widest focus:outline-none focus:border-blue-500"
+            className="w-full bg-black/50 border border-gray-600 rounded-lg px-4 py-3 text-center text-lg font-mono tracking-widest focus:outline-none focus:border-blue-500 uppercase transition-colors"
           />
-          {/* Error Message Display */}
           {errorMsg && <p className="text-red-500 text-sm font-bold animate-pulse">{errorMsg}</p>}
           
-          <button type="submit" disabled={joinCode.length === 0} className="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg">
+          <button type="submit" disabled={joinCode.length === 0} className="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition-transform active:scale-95">
             Join Room
           </button>
         </form>
