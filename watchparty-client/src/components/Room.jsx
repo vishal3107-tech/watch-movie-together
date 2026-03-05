@@ -1,17 +1,33 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client'; // <-- Added Socket.io import here
 import Chat from './Chat';
 import VideoPlayer from './VideoPlayer';
 import VideoGrid from './VideoGrid';
-import { socket } from '../socket'; 
+// REMOVED: import { socket } from '../socket'; // We no longer use the global socket
 
 export default function Room() {
   const { roomId } = useParams();
   const navigate = useNavigate();
+
+  // 1. COMPONENT-LEVEL SOCKET FIX
+  // This ensures a fresh socket is created only when the Room mounts,
+  // and it survives React re-renders safely without duplicating listeners.
+  const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'https://YOUR-RENDER-URL.onrender.com';
+  const socket = useMemo(() => io(SERVER_URL), [SERVER_URL]);
+
+  // 2. SOCKET CLEANUP
+  // This automatically disconnects the user from the server when they leave the page
+  useEffect(() => {
+    return () => {
+      socket.disconnect();
+    };
+  }, [socket]);
+
   const [externalVideoUrl, setExternalVideoUrl] = useState('');
   const [userName, setUserName] = useState('');
   const [isJoined, setIsJoined] = useState(false);
-  const [copied, setCopied] = useState(false); // Copy state
+  const [copied, setCopied] = useState(false);
 
   const roomContainerRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -34,8 +50,6 @@ export default function Room() {
   };
 
   if (!isJoined) {
-    // ... KEEP YOUR EXACT EXISTING isJoined ENTRY SCREEN HERE ...
-    // (Omitted for brevity, paste your name entry UI here)
     return (
       <div className="flex h-screen items-center justify-center bg-gray-900 text-white font-sans p-4">
         <div className="bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700 w-full max-w-md flex flex-col gap-6 text-center">

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Peer from 'simple-peer';
 
-// Now accepts peerName prop!
 const PeerVideo = ({ peer, peerName }) => {
   const ref = useRef();
   useEffect(() => {
@@ -19,7 +18,7 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
   const [peers, setPeers] = useState([]);
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-  const [isScreenSharing, setIsScreenSharing] = useState(false); // Screen share state
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   
   const userVideo = useRef();
   const peersRef = useRef([]); 
@@ -46,7 +45,6 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
     const createPeer = (userToSignal, callerID, stream) => {
       const peer = new Peer({ initiator: true, trickle: false, stream, config: peerConfig });
       peer.on("data", data => handleData(data, peer));
-      // Pass callerName through signal
       peer.on("signal", signal => socket.emit("sending-signal", { userToSignal, callerID, signal, callerName: userName }));
       return peer;
     };
@@ -69,7 +67,7 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
         const newPeers = users.map(userObj => {
           const peer = createPeer(userObj.id, socket.id, stream);
           peersRef.current.push({ peerID: userObj.id, peer, peerName: userObj.name });
-          return { peerID: userObj.id, peer, peerName: userObj.name }; // Map names!
+          return { peerID: userObj.id, peer, peerName: userObj.name };
         });
         setPeers(newPeers);
       });
@@ -110,12 +108,20 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
       readNextChunk();
     };
 
+    // ==========================================
+    // THE FIX: Surgical cleanup of ONLY the VideoGrid listeners!
+    // This goes right at the end of the useEffect.
+    // ==========================================
     return () => { 
-      socket.off("all-users"); socket.off("user-joined"); socket.off("receiving-returned-signal"); socket.off("user-disconnected");
+      socket.off("all-users");
+      socket.off("user-joined");
+      socket.off("receiving-returned-signal");
+      socket.off("user-disconnected");
     };
-  }, [roomId, socket, setExternalVideoUrl, userName]);
+  }, [roomId, socket, setExternalVideoUrl, userName]); 
 
-  // SCREEN SHARE LOGIC
+  // --- Controls Logic Below ---
+
   const toggleScreenShare = async () => {
     if (!isScreenSharing) {
       try {
@@ -123,13 +129,11 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
         const screenTrack = screenStream.getVideoTracks()[0];
         const oldTrack = localStreamRef.current.getVideoTracks()[0];
 
-        // Replace track over WebRTC without dropping connection
         peersRef.current.forEach(({ peer }) => peer.replaceTrack(oldTrack, screenTrack, localStreamRef.current));
         
-        // Update local display
         if (userVideo.current) userVideo.current.srcObject = new MediaStream([screenTrack]);
         
-        screenTrack.onended = () => stopScreenShare(); // Handle clicking "Stop sharing" on browser toolbar
+        screenTrack.onended = () => stopScreenShare();
         setIsScreenSharing(true);
       } catch (err) { console.error("Screen share canceled", err); }
     } else {
@@ -140,7 +144,7 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
   const stopScreenShare = () => {
     navigator.mediaDevices.getUserMedia({ video: true }).then(camStream => {
       const camTrack = camStream.getVideoTracks()[0];
-      const oldTrack = localStreamRef.current.getVideoTracks()[0]; // The screen track
+      const oldTrack = localStreamRef.current.getVideoTracks()[0];
       
       peersRef.current.forEach(({ peer }) => peer.replaceTrack(oldTrack, camTrack, localStreamRef.current));
       
@@ -179,7 +183,6 @@ export default function VideoGrid({ socket, roomId, setExternalVideoUrl, userNam
         <div className="flex justify-center gap-2 mt-1">
           <button onClick={toggleAudio} className={`flex-1 py-1 rounded text-xs font-bold shadow ${isAudioEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-500'}`}>🎤</button>
           <button onClick={toggleVideo} className={`flex-1 py-1 rounded text-xs font-bold shadow ${isVideoEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-500'}`}>🎥</button>
-          {/* SCREEN SHARE BUTTON */}
           <button onClick={toggleScreenShare} className={`flex-1 py-1 rounded text-xs font-bold shadow ${isScreenSharing ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 hover:bg-gray-600'}`}>
             💻 Share
           </button>
